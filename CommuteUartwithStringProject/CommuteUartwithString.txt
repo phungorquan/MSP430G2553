@@ -1,0 +1,164 @@
+Bài thực hành LAB04
+
+#include <msp430.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+
+bool check = true;
+volatile int i = 0; // support timer counter
+volatile int somongmuon = 0;    //Set timer counter
+volatile int checkled = 0;
+char receiveUart[7] = {'\0'};
+volatile unsigned int z = 0; //buffer index of receiveUart
+
+void Configure_Clock(void) {
+  //1Mhz
+  if (CALBC1_1MHZ == 0xFF)
+    while (1);
+
+  DCOCTL = 0;
+  BCSCTL1 = CALBC1_1MHZ;
+  DCOCTL = CALDCO_1MHZ;
+
+  BCSCTL2 |= SELM_0;
+}
+
+void Config_IO() {
+  P1DIR |= BIT0 + BIT6;
+  P1OUT &= ~BIT0;
+  P1OUT &= ~BIT6;
+}
+
+void Configure_Timer(void) {
+  TA0CCR0 = 50000; // 50ms
+  TA0CTL |= TASSEL_2 + MC_1 + TAIE; // Up Mode
+}
+
+void Config_UART() {
+  P1SEL = BIT1 + BIT2;
+  P1SEL2 = BIT1 + BIT2;
+
+  UCA0CTL1 |= UCSWRST;
+  UCA0CTL0 = 0x00;
+
+  UCA0CTL1 = UCSSEL_2 | UCSWRST;
+
+  UCA0MCTL = UCBRF_8 | UCBRS_0 | UCOS16;
+
+  UCA0BR0 = 6; // 9600baud
+  UCA0BR1 = 00;
+
+  UCA0CTL1 &= ~UCSWRST;
+
+  IE2 |= UCA0RXIE;
+
+  _BIS_SR(GIE);
+}
+
+void send(unsigned char byte) {
+  while (!(IFG2 & UCA0TXIFG));
+  UCA0TXBUF = byte;
+}
+
+void _SendString(char str[]) {
+  int Strindex = 0;
+
+  while (str[Strindex] != 0x00) {
+    send(str[Strindex]);
+    Strindex++;
+  }
+}
+void main(void) {
+
+  WDTCTL = WDTPW | WDTHOLD;
+  Configure_Clock();
+  Config_IO();
+  Configure_Timer();
+  Config_UART();
+  _BIS_SR(GIE); // Enter Global Interrupt
+
+  P1REN = BIT3;
+  P1OUT = BIT3;
+
+  while (1) {
+    if ((P1IN & BIT3) == 0) {
+      while ((P1IN & BIT3) == 0);
+      if (check == true) {
+        somongmuon = 40; // Send each 2s (ACTIVE)
+        check = false;
+        i = 0;
+      } else if (check == false) {
+        _SendString("STOP");
+        somongmuon = 0; // (STOP)
+        check = true;
+        i = 0;
+      }
+
+    }
+  }
+}
+
+// UART RECEIVER INTERUPT HANDLER
+#pragma vector = USCIAB0RX_VECTOR
+__interrupt void USCIORX_ISR(void) {
+  volatile unsigned char tmp = UCA0RXBUF;
+
+  if (tmp != '\r' && tmp != '\n' && tmp != '\0') {  // Cut all unnecessary characters
+
+    receiveUart[z] = tmp;
+    z++;
+
+    if (strcmp(receiveUart, "STOP") == 0) {
+      z = 0;
+      somongmuon = 0;
+    } else if (strcmp(receiveUart, "ACTIVE") == 0) {
+      z = 0;
+      somongmuon = 5;
+      i = 0;
+      checkled = 0;
+      receiveUart[4] = '\0';    // When received “Stop” after “Active”, this and below lines will delete the dummy buffer
+      receiveUart[5] = '\0';    // Don’t know why cannot use for loop to delete dummy
+    }
+  }
+
+  if (tmp == 'E' || tmp == 'P') //Avoid error when send Uart 
+    z = 0;
+}
+
+#pragma vector = TIMER0_A1_VECTOR
+__interrupt void Timer_A_1(void) {
+  switch (TA0IV) {
+  case 2:
+    break; // CCR1 not used
+  case 4:
+    break; // CCR2 not used
+  case 10:
+
+    i++;
+
+    if (somongmuon == 40) {	//40 * 50ms = 2s
+      if (i == somongmuon) {
+        _SendString("ACTIVE");
+        i = 0;
+      }
+
+    } else if (somongmuon == 5) { //5 * 50ms = 250ms/led state
+      if (i == somongmuon) {	
+          if(checkled != 2)	// Check toggle once
+          {
+              P1OUT ^= BIT0;
+               i = 0;
+               checkled++;
+          }
+
+      }
+
+    } else if (i > somongmuon)
+      i = 0;
+
+    break;
+  }
+}
+
+
