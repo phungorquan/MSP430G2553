@@ -1,0 +1,91 @@
+Bài thực hành LAB03
+
+#include <msp430.h>
+#include <stdint.h>
+
+void Config_CLK()
+{
+    if(CALBC1_8MHZ == 0xff) // If calibration constant erased
+    {
+        while(1); // do not load, trap CPU!!
+    }
+    DCOCTL = 0; // Select lowest DCOx and MODx settings
+    BCSCTL1 = CALBC1_1MHZ;  // Set range 1MHZ    
+    DCOCTL = CALDCO_1MHZ; 	// Set DCO step + modulation 
+
+    BCSCTL2 |= SELM_0;
+}
+
+
+void Config_IO()
+{
+    P1DIR |= BIT0 + BIT6;
+    P1OUT &= ~BIT0;
+    P1OUT &= ~BIT6;
+}
+
+
+void Config_UART()
+{
+    P1SEL = BIT1 + BIT2;	// P1.1 UCA0RXD input
+    P1SEL2 = BIT1 + BIT2; // P1.2 UCA0TXD output
+
+    UCA0CTL1 |= UCSWRST;
+    UCA0CTL0 = 0x00;
+
+    UCA0CTL1 = UCSSEL_2 | UCSWRST; // USCI Clock = SMCLK,USCI_A0 disabled
+
+    UCA0MCTL = UCBRF_8 |  UCBRS_0 | UCOS16; 
+
+    UCA0BR0 = 6;   // 9600baud
+    UCA0BR1 = 00;
+
+
+    UCA0CTL1 &= ~UCSWRST;
+
+    IE2 |= UCA0RXIE;
+
+    _BIS_SR( GIE);
+}
+
+
+void send(unsigned char byte)
+{
+    while(!(IFG2 & UCA0TXIFG));
+    UCA0TXBUF = byte;
+}
+
+
+void main(void)
+{
+    WDTCTL = WDTPW | WDTHOLD;
+    Config_CLK();
+    Config_IO();
+    Config_UART();
+				
+				
+    send('1');  // When press reset, the cpu will start again and send '1' to turn on led 1
+    P1REN = BIT3;   // Set Internal Resistor of button S2
+    P1OUT = BIT3;
+
+    while(1){
+        if((P1IN & BIT3) == 0)  // If press S2
+        {
+         while((P1IN & BIT3) == 0); // If press and hole S2
+            send('2');          // Send to turn on led 2
+        }
+    }
+}
+
+
+// UART RECEIVER INTERUPT HANDLER
+#pragma vector = USCIAB0RX_VECTOR
+__interrupt void USCIORX_ISR(void)
+{
+
+    if(UCA0RXBUF == '1')    // Turn on led 1 when received '1'
+        P1OUT ^= BIT0;
+    else if(UCA0RXBUF == '2')   // Turn on led 2 when received '2'
+        P1OUT ^= BIT6;
+}
+
