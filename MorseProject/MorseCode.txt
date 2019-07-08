@@ -1,0 +1,126 @@
+#include <msp430.h>				
+#include <stdint.h>
+
+#define Led_0 BIT0
+#define Led_1 BIT6
+
+/*                              Define threes Groups !!!
+define : 1(.) 0(_)
+
+    0               1               2                       3               Don't need a group
+
+ T(_)  0        M(_ _)  00      O(_ _ _) 000                    0000        0(_ _ _ _ _) 0 0000
+ E(.)  1        N(_ .)  01      G(_ _ .) 001        Q(_ _ . _)  0001        1(. _ _ _ _) 1 0000
+                A(. _)  10      K(_ . _) 010        Z(_ _ . .)  0010        2(. . _ _ _) 1 1000
+                I(. .)  11      D(_ . .) 011        Y(_ . _ _)  0011        3(. . . _ _) 1 1100
+                                W(. _ _) 100        C(_ . _ .)  0100        4(. . . . _) 1 1110
+                                R(. _ .) 101        X(_ . . _)  0101        5(. . . . .) 1 1111
+                                U(. . _) 110        B(_ . . .)  0110        6(_ . . . .) 0 1111
+                                S(. . .) 111        J(. _ _ _)  0111        7(_ _ . . .) 0 0111
+                                                    P(. _ _ .)  1000        8(_ _ _ . .) 0 0011
+                                                                1010        9(_ _ _ _ .) 0 0001
+                                                    L(. _ . .)  1011
+                                                                1100
+                                                    F(. . _ .)  1101
+                                                    V(. . . _)  1110
+                                                    H(. . . .)  1111
+*/
+
+uint8_t Group_And_Value[] = {  // Create an array[90] , Can decrease the elements but still keep to see clearly (Corresponding with ASCII table)
+                          0x01,0x03,0x03,0x02,0x00,0x03,0x02,0x03,0x01,0x03     // 0,...,9   From 0 -> 25 contain groups: 0 , 1 , 2 , 3.
+                         ,0x02,0x03,0x01,0x01,0x02,0x03,0x03,0x02,0x02,0x00     // 10,..,19
+                         ,0x02,0x03,0x02,0x03,0x03,0x03                         // 20,..,25
+
+                         ,0,0,0,0,0,0,0,0,0,0                                   // 26,..,35 Not using
+                         ,0,0,0,0,0,0,0,0,0,0                                   // 36,..,45 Not using
+                         ,0,0                                                   // 46,47    Not using
+
+                         ,0x00,0x10,0x18,0x1C,0x1E,0x1F,0x0F,0x07,0x03,0x01     // 48,..,57 This is Dec index of Numbers in ASCII table
+
+                         ,0,0,0,0,0,0,0                                         // 58,..,64 Not using
+
+                         ,0x02,0x07,0x05,0x03,0x01,0x0D,0x01,0x0F,0x03,0x08     // 65,..,74 From 65 - 80, This is Dec index of Letters in ASCII table
+                         ,0x02,0x0B,0x00,0x01,0x00,0x09,0x02,0x05,0x07,0x00     // 75,..,84 Value is defined as Morse code
+                         ,0x06,0x0E,0x04,0x06,0x04,0x03                         // 85,..,90
+                                                                                // Example : A is (. _) = 10 -> 0x02
+                       };                                                       // Don't Care About Numeral Systems
+
+
+void _On(uint16_t led){     // Using for Letters And Numbers
+    volatile unsigned int i;
+
+    P1OUT = led;            // Turn on led 0 or led 1
+    for(i=5000; i>0; i--);  // Delay
+    P1OUT = 0x00;           // Turn off
+    for(i=5000; i>0; i--);  // Delay
+}
+
+void _On_2Led(void)         // Using for Space
+{
+    volatile unsigned int i;
+
+    P1OUT = Led_0|Led_1;    // Turn on 2 leds
+    for(i=10000; i>0; i--);  // Delay
+    P1OUT = 0x00;           // Turn off
+    for(i=10000; i>0; i--);  // Delay
+}
+
+void Compare_And_Output(uint8_t value , int group)
+{
+    uint8_t tmp;
+    volatile unsigned int i;
+    value = value << (4-group);       // Shift left (4-group)bits because the max Morse code is 5bits
+    for(i = 0;i < group + 1 ; i++)    // Example : value is P(1 0 0 0) in group 3 -> shift (4-3 = 1)bits -> 0001 0000
+    {
+        tmp = value & 0x10;           // tmp = 0001 0000
+                                      //     & 0001 0000 -> tmp = 0001 0000 = 0x10
+
+            if(tmp == 0x00)           // If tmp == 0x00 -> Turn on Led0
+                _On(Led_0);
+            else if (tmp == 0x10)     // If tmp == 0x10 -> Turn on Led1
+                _On(Led_1);
+
+        value = value << 1;           // Then , shift left 1 bit to process the next bit
+    }
+}
+
+void main(void)
+{
+	WDTCTL = WDTPW | WDTHOLD;		    // Stop watchdog timer
+	P1DIR |= BIT0|BIT6;			        // Set P1.0 & P1.6 as output
+
+	char str[17] = "ANHQUAN 16520985";  // Array char str[17]
+
+	while(1){
+
+	    volatile unsigned int i = 0;
+
+	    while(str[i] != 0x00)           // Check If the character[i] is different from 0x00 (0x00 is the end of Array str[])
+	    {
+	        while (str[i] > 0x40)       // Check If the character[i] > '@' , check character[i] is Numbers or Letters
+	        {
+	            switch(Group_And_Value[str[i] - 65])    // If that character[i] is Letters, then check the group by take Dec index of character[i] in ASCII table minus 65
+	                                                    // in order to point to element from 0->25 of Array Group_And_Value[] to know which group its belong
+	                       {
+	                       case 0x00:  Compare_And_Output(Group_And_Value[str[i]],0); break;    // If that character[i] is group 0
+	                       case 0x01:  Compare_And_Output(Group_And_Value[str[i]],1); break;    // Take out the element of character[i] and transfer to Compare_And_Output() function
+	                       case 0x02:  Compare_And_Output(Group_And_Value[str[i]],2); break;
+	                       case 0x03:  Compare_And_Output(Group_And_Value[str[i]],3); break;
+	                       }
+	            i++;            // Then point to the next character
+	        }
+
+	        while (str[i] > 0x2F && str[i] < 0x3A)              // Check If the character[i] is Numbers
+	        {
+	            Compare_And_Output(Group_And_Value[str[i]],4);  // Do the same as the Letters but don't need to find out the group
+	            i++;            // Then point to the next character
+	        }
+
+	        if(str[i] == 0x20)  // If the character[i] is SPACE
+	        {
+	            _On_2Led();     // Turn on both of leds to distinguish
+	            i++;            // Then point to the next character
+	        }
+	    }
+	}
+}
